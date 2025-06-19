@@ -11,7 +11,7 @@ import logging
 import traceback
 from datetime import datetime
 from typing import Optional
-from transformers import pipeline
+from transformers.pipelines import pipeline
 import scipy
 
 # Configure logging
@@ -37,12 +37,13 @@ app.add_middleware(
 )
 
 # Initialize TTS models
-try:
-    logger.info("Initializing TTS models...")
-    model_manager = ModelManager()
+synthesizer_vctk = None
+synthesizer_bark = None
 
-    # VCTK model
-    logger.info("Loading VCTK model...")
+# Initialize VCTK model (primary model for podcast)
+try:
+    logger.info("Initializing VCTK model...")
+    model_manager = ModelManager()
     model_name_vctk = "tts_models/en/vctk/vits"
     model_path_vctk, config_path_vctk, model_item_vctk = model_manager.download_model(model_name_vctk)
     vocoder_name_vctk = model_item_vctk.get("default_vocoder", None)
@@ -56,21 +57,15 @@ try:
         vocoder_config=vocoder_config_path_vctk,
         use_cuda=False
     )
-    logger.info("VCTK model loaded.")
-
-    # Bark model
-    logger.info("Loading Bark model...")
-    model_name_bark = "tts_models/multilingual/multi-dataset/bark"
-    model_path_bark, config_path_bark, model_item_bark = model_manager.download_model(model_name_bark)
-    vocoder_name_bark = model_item_bark.get("default_vocoder", None)
-    vocoder_path_bark, vocoder_config_path_bark, _ = (None, None, None)
-    if vocoder_name_bark:
-        vocoder_path_bark, vocoder_config_path_bark, _ = model_manager.download_model(vocoder_name_bark)
-
+    logger.info("VCTK model loaded successfully.")
 except Exception as e:
-    logger.error(f"Failed to initialize TTS models: {str(e)}")
+    logger.error(f"Failed to initialize VCTK model: {str(e)}")
     logger.error(traceback.format_exc())
-    raise
+    # Don't raise here - let the server start with just Bark if available
+
+# Bark model initialization disabled for now - will be fixed separately
+logger.info("Bark model initialization disabled - focusing on VCTK for podcast")
+synthesizer_bark = None
 
 # Hugging Face Bark setup
 try:
@@ -81,8 +76,8 @@ except Exception as e:
 
 class TTSRequest(BaseModel):
     text: str
-    speaker_id: str = None
-    language_id: str = None
+    speaker_id: Optional[str] = None
+    language_id: Optional[str] = None
 
 class BarkTTSRequest(BaseModel):
     text: str
@@ -104,8 +99,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.post("/api/tts")
 @app.get("/api/tts")
-async def text_to_speech(request: Request, tts_request: TTSRequest = None):
+async def text_to_speech(request: Request, tts_request: Optional[TTSRequest] = None):
     try:
+        # Check if VCTK model is available
+        if synthesizer_vctk is None:
+            raise HTTPException(
+                status_code=503, 
+                detail="VCTK TTS model is not available. Please check server logs for initialization errors."
+            )
+            
         # Log request details
         logger.info(f"Received request: {request.method} {request.url}")
         
@@ -129,14 +131,29 @@ async def text_to_speech(request: Request, tts_request: TTSRequest = None):
 
         # FIXED SPEECH GENERATION
         synthesis_params = {}
-        if speaker_id and hasattr(synthesizer_vctk.tts_model, 'speaker_manager'):
-            # Verify speaker exists
-            if speaker_id not in synthesizer_vctk.tts_model.speaker_manager.speaker_names:
+        
+        # Backwards compatibility: if no speaker_id is provided, use a default
+        speaker_manager = getattr(getattr(synthesizer_vctk, 'tts_model', None), 'speaker_manager', None)
+        
+        if not speaker_id:
+            # Use the first available speaker as default
+            if speaker_manager and hasattr(speaker_manager, 'name_to_id') and speaker_manager.name_to_id:
+                # Get the first available speaker ID from the name_to_id mapping
+                default_speaker_id = list(speaker_manager.name_to_id.keys())[0]
+                logger.info(f"No speaker_id provided, using default speaker: {default_speaker_id}")
+                synthesis_params['speaker_name'] = default_speaker_id
+            else:
+                logger.info("No speaker_id provided and no speaker manager available, proceeding without speaker selection")
+        elif speaker_manager and hasattr(speaker_manager, 'name_to_id'):
+            # Verify speaker exists in the name_to_id mapping
+            clean_speaker_id = speaker_id.strip()
+            if clean_speaker_id not in speaker_manager.name_to_id:
+                available_speakers = list(speaker_manager.name_to_id.keys())[:5]
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid speaker_id. Valid options: {synthesizer_vctk.tts_model.speaker_manager.speaker_names[:5]}..."
+                    detail=f"Invalid speaker_id. Valid options: {available_speakers}..."
                 )
-            synthesis_params['speaker_name'] = speaker_id
+            synthesis_params['speaker_name'] = clean_speaker_id
         
         wavs = synthesizer_vctk.tts(text, **synthesis_params)
         
@@ -165,7 +182,7 @@ async def health_check():
     try:
         # Test TTS functionality with a simple string
         test_text = "Health check"
-        wavs = synthesizer_vctk.tts(test_text, speaker_id="p225")
+        wavs = synthesizer_vctk.tts(test_text, speaker_name="p225")
         return {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
@@ -185,9 +202,10 @@ async def health_check():
 @app.get("/api/speakers")
 async def list_speakers():
     try:
-        if hasattr(synthesizer_vctk.tts_model, 'speaker_manager'):
+        speaker_manager = getattr(getattr(synthesizer_vctk, 'tts_model', None), 'speaker_manager', None)
+        if speaker_manager and hasattr(speaker_manager, 'name_to_id'):
             return {
-                "speakers": synthesizer_vctk.tts_model.speaker_manager.speaker_names
+                "speakers": list(speaker_manager.name_to_id.keys())
             }
         return {"speakers": [], "message": "Current model doesn't support multiple speakers"}
     except Exception as e:
