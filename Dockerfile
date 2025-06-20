@@ -33,4 +33,3 @@ RUN python -c "from TTS.utils.manage import ModelManager; ModelManager().downloa
 EXPOSE 5002
 
 # Start the server
-CMD ["python", "tts_api_server.py"] 
