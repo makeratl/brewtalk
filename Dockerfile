@@ -7,7 +7,8 @@ ENV PYTHONUNBUFFERED 1
 
 # Install system dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc g++ ffmpeg && \
+    apt-get install -y --no-install-recommends \
+    gcc g++ ffmpeg libsndfile1-dev espeak-ng && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -23,6 +24,9 @@ COPY . .
 
 # Download Bark model
 RUN huggingface-cli download suno/bark --local-dir bark_model
+
+# Add model verification step
+RUN python -c "from TTS.utils.manage import ModelManager; ModelManager().download_model('tts_models/en/vctk/vits')"
 
 # Expose API port
 EXPOSE 5002
