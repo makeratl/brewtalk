@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  tts-api:
+    build: .
+    ports:
+      - "5002:5002"
+    volumes:
+      - ./bark_model:/app/bark_model
+      - ./tts_server.log:/app/tts_server.log
+    environment:
+      - PYTHONUNBUFFERED=1 
