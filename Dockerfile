@@ -21,8 +21,9 @@ RUN pip install --no-cache-dir -r requirements_api.txt && \
 # Copy application files
 COPY . .
 
-# Download Bark model
-RUN huggingface-cli download suno/bark --local-dir bark_model
+# Download Bark models (optional)
+RUN huggingface-cli download suno/bark --local-dir bark_model || \
+    echo "Warning: Bark model download failed. Continuing without Bark support."
 
 # Expose API port
 EXPOSE 5002
