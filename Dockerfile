@@ -22,8 +22,9 @@ RUN pip install --no-cache-dir -r requirements_api.txt && \
 # Copy application files
 COPY . .
 
-# Download Bark model
-RUN huggingface-cli download suno/bark --local-dir bark_model
+# Download Bark models (optional)
+RUN huggingface-cli download suno/bark --local-dir bark_model || \
+    echo "Warning: Bark model download failed. Continuing without Bark support."
 
 # Add model verification step
 RUN python -c "from TTS.utils.manage import ModelManager; ModelManager().download_model('tts_models/en/vctk/vits')"
