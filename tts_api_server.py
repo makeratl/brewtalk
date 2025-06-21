@@ -233,4 +233,5 @@ async def bark_text_to_speech(bark_request: BarkTTSRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=5002) 
+    # Run the Flask app with explicit host and port binding
+    app.run(host='0.0.0.0', port=5002, debug=True) 
