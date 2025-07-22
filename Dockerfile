@@ -15,15 +15,10 @@ WORKDIR /app
 
 # Copy requirements first to leverage Docker cache
 COPY requirements_api.txt .
-RUN pip install --no-cache-dir -r requirements_api.txt && \
-    pip install --no-cache-dir "transformers>=4.31.0" scipy huggingface_hub
+RUN pip install --no-cache-dir -r requirements_api.txt
 
 # Copy application files
 COPY . .
-
-# Download Bark models (optional)
-RUN huggingface-cli download suno/bark --local-dir bark_model || \
-    echo "Warning: Bark model download failed. Continuing without Bark support."
 
 # Expose API port
 EXPOSE 5002

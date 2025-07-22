@@ -11,8 +11,6 @@ import logging
 import traceback
 from datetime import datetime
 from typing import Optional
-from transformers.pipelines import pipeline
-import scipy
 
 # Configure logging
 logging.basicConfig(
@@ -38,7 +36,6 @@ app.add_middleware(
 
 # Initialize TTS models
 synthesizer_vctk = None
-synthesizer_bark = None
 
 # Initialize VCTK model (primary model for podcast)
 try:
@@ -61,26 +58,14 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize VCTK model: {str(e)}")
     logger.error(traceback.format_exc())
-    # Don't raise here - let the server start with just Bark if available
+    # Don't raise here - let the server start even if VCTK fails
 
-# Bark model initialization disabled for now - will be fixed separately
-logger.info("Bark model initialization disabled - focusing on VCTK for podcast")
-synthesizer_bark = None
 
-# Hugging Face Bark setup
-try:
-    bark_pipeline = pipeline("text-to-speech", "suno/bark")
-except Exception as e:
-    logging.error(f"Failed to initialize Hugging Face Bark pipeline: {e}")
-    bark_pipeline = None
 
 class TTSRequest(BaseModel):
     text: str
     speaker_id: Optional[str] = None
     language_id: Optional[str] = None
-
-class BarkTTSRequest(BaseModel):
-    text: str
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -212,25 +197,7 @@ async def list_speakers():
         logger.error(f"Error listing speakers: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/tts/bark")
-async def bark_text_to_speech(bark_request: BarkTTSRequest):
-    try:
-        if bark_pipeline is None:
-            raise HTTPException(status_code=500, detail="Bark model not available.")
-        text = bark_request.text
-        speech = bark_pipeline(text, forward_params={"do_sample": True})
-        wav_bytes = io.BytesIO()
-        scipy.io.wavfile.write(wav_bytes, rate=speech["sampling_rate"], data=speech["audio"])
-        wav_bytes.seek(0)
-        return StreamingResponse(
-            wav_bytes,
-            media_type="audio/wav",
-            headers={"Content-Disposition": "attachment; filename=bark_output.wav"}
-        )
-    except Exception as e:
-        logging.error(f"Error in bark_text_to_speech: {str(e)}")
-        logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     # Run the Flask app with explicit host and port binding

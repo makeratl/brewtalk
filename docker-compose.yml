@@ -5,7 +5,6 @@ services:
     ports:
       - "5002:5002"
     volumes:
-      - ./bark_model:/app/bark_model
       - ./tts_server.log:/app/tts_server.log
     environment:
       - PYTHONUNBUFFERED=1 
